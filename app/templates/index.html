@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description"
+    content="DermAI — AI-powered skin disease classification using a Hybrid CNN + ResNet50 deep learning model. Detect Eczema, Psoriasis, Melanoma, Basal Cell Carcinoma, and Benign Keratosis." />
+  <title>DermAI — Skin Disease Classification</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+
+<body>
+
+  <!-- ── Animated background ───────────────────────────── -->
+  <div class="bg-orbs" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- ── Header ────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <!-- <span class="logo-icon">🔬</span> -->
+        <span class="logo-text">Derm<span class="logo-accent">AI</span></span>
+      </div>
+      <div class="header-badge">Hybrid CNN + ResNet50</div>
+    </div>
+  </header>
+
+  <!-- ── Main ──────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Hero -->
+    <section class="hero">
+      <h1 class="hero-title">Skin Disease <span class="gradient-text">Classification</span></h1>
+      <p class="hero-subtitle">Upload a skin image and our AI model will detect the disease with high accuracy across 5
+        categories.</p>
+
+    </section>
+
+    <!-- Upload card -->
+    <section class="card upload-card" id="upload-section">
+      <div id="drop-zone" class="drop-zone" role="button" tabindex="0" aria-label="Upload skin image">
+        <div class="drop-icon">📂</div>
+        <p class="drop-title">Drag &amp; drop your image here</p>
+        <p class="drop-sub">or click to browse · JPG, PNG, BMP, WEBP · max 10 MB</p>
+        <input type="file" id="file-input" accept=".jpg,.jpeg,.png,.bmp,.webp" hidden aria-label="Choose image file" />
+        <button class="btn btn-primary" id="browse-btn" type="button">Choose Image</button>
+      </div>
+
+      <!-- Preview -->
+      <div id="preview-container" class="preview-container hidden">
+        <img id="preview-img" class="preview-img" src="" alt="Selected skin image preview" />
+        <div class="preview-actions">
+          <span id="preview-name" class="preview-name"></span>
+          <button class="btn btn-ghost" id="clear-btn" type="button">✕ Clear</button>
+        </div>
+      </div>
+
+      <button class="btn btn-analyze" id="analyze-btn" type="button" disabled>
+        <span class="btn-text">Analyze Image</span>
+        <span class="btn-loader hidden" aria-label="Analyzing">
+          <span class="spinner"></span> Analyzing…
+        </span>
+      </button>
+    </section>
+
+    <!-- Results -->
+    <section id="results-section" class="results-section hidden" aria-live="polite">
+
+      <!-- Error state -->
+      <div id="error-card" class="card error-card hidden">
+        <span class="error-icon">⚠️</span>
+        <p id="error-msg" class="error-msg"></p>
+      </div>
+
+      <!-- Result card -->
+      <div id="result-card" class="card result-card hidden">
+
+        <div class="result-top">
+          <!-- Uploaded image -->
+          <div class="result-image-wrap">
+            <img id="result-img" src="" alt="Analyzed skin image" class="result-img" />
+            <span class="result-img-label">Analyzed Image</span>
+          </div>
+
+          <!-- Prediction summary -->
+          <div class="result-summary">
+            <div id="disease-icon" class="disease-icon"></div>
+            <h2 id="result-class" class="result-class"></h2>
+            <div class="confidence-wrap">
+              <span class="confidence-label">Confidence</span>
+              <span id="result-confidence" class="result-confidence"></span>
+            </div>
+            <div id="severity-badge" class="severity-badge"></div>
+          </div>
+        </div>
+
+        <!-- Probability bars -->
+        <div class="prob-section">
+          <h3 class="prob-title">Class Probabilities</h3>
+          <div id="prob-bars" class="prob-bars"></div>
+        </div>
+
+        <!-- Disease info -->
+        <div id="disease-info" class="disease-info-section">
+          <h3 class="info-title">About <span id="info-class-name"></span></h3>
+          <p id="info-description" class="info-description"></p>
+          <div class="symptoms-wrap">
+            <h4 class="symptoms-title">Common Symptoms</h4>
+            <ul id="symptoms-list" class="symptoms-list"></ul>
+          </div>
+          <!-- <p class="disclaimer">⚕️ <strong>Disclaimer:</strong> This tool is for educational and research purposes only.
+            Always consult a qualified dermatologist for medical diagnosis.</p> -->
+        </div>
+
+        <!-- Analyze again -->
+        <button class="btn btn-ghost btn-center" id="again-btn" type="button">Analyze Another Image</button>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/js/main.js"></script>
+</body>
+
+</html>

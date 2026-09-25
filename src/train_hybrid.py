@@ -21,12 +21,14 @@ Callbacks used in both phases:
 Outputs (all saved separately from the original pipeline):
     models/best_model_hybrid.keras
     models/final_model_hybrid.keras
+    models/history_phase1.json   ← Phase 1 history saved here after Phase 1 runs
     outputs/accuracy_hybrid.png
     outputs/loss_hybrid.png
 
 Original train.py is NOT modified.
 """
 
+import json
 import time
 
 import matplotlib
@@ -53,7 +55,7 @@ EPOCHS_PHASE2 = 20   # fine-tuning
 
 # ── Set to True to skip Phase 1 and load the saved Phase 1 checkpoint ──────────
 # Phase 1 already completed → set SKIP_PHASE1 = True to go straight to Phase 2
-SKIP_PHASE1 = True
+SKIP_PHASE1 = False
 
 
 # ================================================================
@@ -114,6 +116,8 @@ def make_callbacks(phase: int):
 
 checkpoint_path = MODEL_DIR / "best_model_hybrid.keras"
 
+history_path = MODEL_DIR / "history_phase1.json"
+
 if SKIP_PHASE1 and checkpoint_path.exists():
     print("\n" + "=" * 60)
     print("PHASE 1 — SKIPPED (restoring weights from checkpoint)")
@@ -129,16 +133,31 @@ if SKIP_PHASE1 and checkpoint_path.exists():
     print("  Weights restored successfully.\n")
     phase1_time = 0.0
 
-    # Create a dummy history so the combine() call later still works
-    class _DummyHistory:
-        def __init__(self, n):
-            self.history = {
-                "accuracy":     [None] * n,
-                "val_accuracy": [None] * n,
-                "loss":         [None] * n,
-                "val_loss":     [None] * n,
-            }
-    history_phase1 = _DummyHistory(EPOCHS_PHASE1)
+    # ── Load real Phase 1 history from JSON (if available) ───────────────────
+    # This allows the full Phase 1 + Phase 2 graph to be plotted correctly
+    # even when Phase 1 is skipped on subsequent runs.
+    if history_path.exists():
+        print(f"  Loading Phase 1 history from {history_path.name}...")
+        with open(history_path, "r") as f:
+            saved = json.load(f)
+        class _LoadedHistory:
+            def __init__(self, d):
+                self.history = d
+        history_phase1 = _LoadedHistory(saved)
+        print(f"  Phase 1 epochs in history : {len(saved['accuracy'])}\n")
+    else:
+        # Fallback: dummy history if JSON not found (first SKIP_PHASE1 run)
+        print("  WARNING: history_phase1.json not found — graph will show Phase 2 only.")
+        print("  Run once with SKIP_PHASE1=False to generate full graph.\n")
+        class _DummyHistory:
+            def __init__(self, n):
+                self.history = {
+                    "accuracy":     [None] * n,
+                    "val_accuracy": [None] * n,
+                    "loss":         [None] * n,
+                    "val_loss":     [None] * n,
+                }
+        history_phase1 = _DummyHistory(EPOCHS_PHASE1)
 
 else:
     print("\n" + "=" * 60)
@@ -159,6 +178,15 @@ else:
 
     phase1_time = time.time() - start_time
     print(f"\nPhase 1 completed in {phase1_time / 60:.2f} minutes")
+
+    # ── Save Phase 1 history to JSON for future SKIP_PHASE1=True runs ────────
+    history_dict = {
+        key: [float(v) for v in vals]
+        for key, vals in history_phase1.history.items()
+    }
+    with open(history_path, "w") as f:
+        json.dump(history_dict, f, indent=2)
+    print(f"  Phase 1 history saved → models/history_phase1.json")
 
 
 # ================================================================
