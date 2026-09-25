@@ -4,7 +4,10 @@
 > *"Enhanced Deep Learning Approach for Accurate Eczema and Psoriasis Skin Detection"*
 > Sensors, 2023
 
-This project reproduces the CNN-based classification model from the paper and extends it with an improved **Hybrid CNN + ResNet50** transfer learning pipeline, along with a full **Flask web application (DermAI)** for real-time skin disease prediction.
+This project reproduces and extends the CNN-based classification model from the paper.
+The original paper addressed binary classification (Eczema vs Psoriasis), but **both pipelines in
+this implementation perform 5-class multiclass classification** across a broader set of skin diseases.
+A **Flask web application (DermAI)** is also included for real-time skin disease prediction.
 
 ---
 
@@ -12,8 +15,8 @@ This project reproduces the CNN-based classification model from the paper and ex
 
 - [Dataset](#dataset)
 - [Project Structure](#project-structure)
-- [Pipeline 1 — Original CNN](#pipeline-1--original-cnn)
-- [Pipeline 2 — Hybrid CNN--ResNet50](#pipeline-2--hybrid-cnn--resnet50)
+- [Pipeline 1 — Custom CNN (Multiclass)](#pipeline-1--custom-cnn-multiclass)
+- [Pipeline 2 — Hybrid CNN + ResNet50 (Multiclass)](#pipeline-2--hybrid-cnn--resnet50-multiclass)
 - [DermAI Web Application](#dermai-web-application)
 - [Setup](#setup)
 - [Usage](#usage)
@@ -26,12 +29,30 @@ This project reproduces the CNN-based classification model from the paper and ex
 | Property | Details |
 |---|---|
 | **Source** | [Kaggle Skin Disease Dataset](https://www.kaggle.com/) |
-| **Total dataset images** | ~27,153 (10 disease classes) |
-| **Classes used (original paper)** | Eczema (1,677) · Psoriasis (2,055) |
-| **Classes used (hybrid model)** | Eczema · Psoriasis · Melanoma · Basal Cell Carcinoma · Benign Keratosis |
-| **Original images** | 3,732 |
-| **After augmentation** | ~6,286 |
+| **Total dataset images** | ~27,153 (10 disease classes available) |
+| **Classes selected** | 5 (see below) |
 | **Split** | 80% Training / 20% Testing |
+
+### Classes Used
+
+| # | Class | Original Images |
+|---|---|---|
+| 0 | Eczema | 1,677 |
+| 1 | Psoriasis | 2,055 |
+| 2 | Melanoma | — |
+| 3 | Basal Cell Carcinoma | — |
+| 4 | Benign Keratosis | — |
+
+### Augmentation (offline, before training)
+
+Applied to maintain the same ~1.685× augmentation ratio as the paper (3,732 → ~6,286 images):
+
+| Technique | Details |
+|---|---|
+| Horizontal flip | Left-right mirror |
+| Rotation | Random angle in range [−20°, +20°] |
+| Random crop | 10–20 px from each side, resized back |
+| Gaussian blur | Kernel size 3×3 |
 
 ---
 
@@ -49,13 +70,14 @@ SkinDiseaseClassification/
 ├── dataset/
 │   └── IMG_CLASSES/
 │       ├── 1. Eczema 1677/
-│       └── 7. Psoriasis pictures .../
+│       ├── 7. Psoriasis pictures .../
+│       └── ...
 ├── models/
-│   ├── best_model.keras           ← Original CNN checkpoint
+│   ├── best_model.keras           ← Custom CNN best checkpoint
 │   ├── final_model.keras
-│   ├── best_model_hybrid.keras    ← Hybrid model checkpoint
+│   ├── best_model_hybrid.keras    ← Hybrid model best checkpoint
 │   ├── final_model_hybrid.keras
-│   └── history_phase1.json        ← Phase 1 training history
+│   └── history_phase1.json        ← Phase 1 training history (hybrid)
 ├── outputs/
 │   ├── accuracy.png
 │   ├── loss.png
@@ -64,13 +86,13 @@ SkinDiseaseClassification/
 │   ├── loss_hybrid.png
 │   └── confusion_matrix_hybrid.png
 ├── src/
-│   ├── config.py                  ← Shared config and TARGET_CLASSES
+│   ├── config.py                  ← Shared config and TARGET_CLASSES (5 classes)
 │   ├── load_dataset.py
-│   ├── preprocess.py              ← Original preprocessing (180x180)
-│   ├── preprocess_hybrid.py       ← Hybrid preprocessing (224x224, ResNet50)
-│   ├── model.py                   ← Original CNN architecture
+│   ├── preprocess.py              ← Custom CNN preprocessing (180×180, normalized)
+│   ├── preprocess_hybrid.py       ← Hybrid preprocessing (224×224, ResNet50 scaled)
+│   ├── model.py                   ← Custom CNN architecture
 │   ├── model_hybrid.py            ← Hybrid CNN + ResNet50 architecture
-│   ├── train.py                   ← Original training script
+│   ├── train.py                   ← Custom CNN training script
 │   ├── train_hybrid.py            ← Two-phase transfer learning script
 │   ├── evaluate.py
 │   ├── evaluate_hybrid.py
@@ -82,23 +104,27 @@ SkinDiseaseClassification/
 
 ---
 
-## Pipeline 1 — Original CNN
+## Pipeline 1 — Custom CNN (Multiclass)
 
-Reproduction of the paper's Sequential CNN for **binary classification** (Eczema vs Psoriasis).
+A from-scratch Sequential CNN based on the paper's architecture, **extended to 5-class multiclass classification**.
+
+> The original paper used this architecture for binary (Eczema vs Psoriasis) detection.
+> In this implementation, the same architecture is applied across all **5 disease classes**
+> using `len(TARGET_CLASSES)` as the output size, making it a true multiclass classifier.
 
 ### Architecture
 
 | Layer | Details |
 |---|---|
-| Conv2D Block 1 | 32 filters, 3×3, ReLU + MaxPooling |
-| Conv2D Block 2 | 64 filters, 3×3, ReLU + MaxPooling |
-| Conv2D Block 3 | 128 filters, 3×3, ReLU + MaxPooling |
-| Conv2D Block 4 | 256 filters, 3×3, ReLU + MaxPooling |
-| Conv2D Block 5 | 256 filters, 3×3, ReLU + MaxPooling |
+| Conv2D Block 1 | 32 filters, 3×3, ReLU, padding=same + MaxPooling 2×2 |
+| Conv2D Block 2 | 64 filters, 3×3, ReLU, padding=same + MaxPooling 2×2 |
+| Conv2D Block 3 | 128 filters, 3×3, ReLU, padding=same + MaxPooling 2×2 |
+| Conv2D Block 4 | 256 filters, 3×3, ReLU, padding=same + MaxPooling 2×2 |
+| Conv2D Block 5 | 256 filters, 3×3, ReLU, padding=same + MaxPooling 2×2 |
 | Flatten | — |
 | Dense | 256 units, ReLU |
 | Dropout | 0.5 |
-| Output | 2 units, Softmax |
+| Output | **5 units, Softmax** (Eczema / Psoriasis / Melanoma / BCC / Benign Keratosis) |
 
 ### Hyperparameters
 
@@ -109,34 +135,31 @@ Reproduction of the paper's Sequential CNN for **binary classification** (Eczema
 | Epochs | 30 |
 | Batch Size | 32 |
 | Input Size | 180 × 180 × 3 |
-
-### Augmentation (offline, before training)
-
-- Horizontal flip
-- Rotation
-- Cropping
-- Gaussian blur
+| Normalization | Pixel values scaled to [0, 1] |
 
 ---
 
-## Pipeline 2 — Hybrid CNN + ResNet50
+## Pipeline 2 — Hybrid CNN + ResNet50 (Multiclass)
 
-An improved model extending the original to **5-class** skin disease classification using transfer learning.
+An improved pipeline using ResNet50 as a pretrained backbone with a two-phase transfer learning strategy,
+also performing **5-class multiclass classification**.
 
-### Key Improvements
+### Key Differences vs Pipeline 1
 
-| Aspect | Original | Hybrid |
+| Aspect | Pipeline 1 (Custom CNN) | Pipeline 2 (Hybrid) |
 |---|---|---|
-| Backbone | Custom CNN from scratch | ResNet50 (ImageNet pretrained) |
+| Backbone | Custom CNN (from scratch) | ResNet50 (ImageNet pretrained) |
 | Input resolution | 180 × 180 | **224 × 224** (ResNet50 native) |
-| Classes | 2 (Eczema, Psoriasis) | **5** (+Melanoma, BCC, Benign Keratosis) |
-| Training strategy | Single phase, frozen backbone | **Two-phase transfer learning** |
+| Preprocessing | Normalize [0, 1] | ResNet50 `preprocess_input` |
+| Classifier head | Dense(256) → Dropout(0.5) | Dense(512) → BN → Dropout(0.4) → Dense(256) → BN → Dropout(0.3) |
+| Training strategy | Single phase | **Two-phase transfer learning** |
 | Domain adaptation | None | Fine-tunes top 30 ResNet50 layers |
+| Output | 5-class Softmax | 5-class Softmax |
 
 ### Architecture
 
 ```
-ResNet50 (pretrained on ImageNet, 175 layers)
+ResNet50 (pretrained on ImageNet, backbone frozen in Phase 1)
     └── GlobalAveragePooling2D          → 2048-D feature vector
     └── Dense(512, ReLU)
     └── BatchNormalization
@@ -150,33 +173,38 @@ ResNet50 (pretrained on ImageNet, 175 layers)
 ### Two-Phase Training
 
 **Phase 1 — Head Warm-Up (15 epochs)**
-- ResNet50 backbone fully **frozen**
-- Only the classifier head is trained
+
+- ResNet50 backbone fully **frozen** (175 layers locked)
+- Only the custom classifier head is trained
 - Learning Rate: `1e-3`
+- Safe to use a high LR since pretrained weights are untouched
 
 **Phase 2 — Fine-Tuning (20 epochs)**
+
 - Top **30 ResNet50 layers** unfrozen
-- Very small LR (`1e-5`) prevents catastrophic forgetting
+- Very small LR (`1e-5`) to prevent catastrophic forgetting
 - Adapts ImageNet features → dermatology domain
 
 ### Callbacks (both phases)
 
-- `ModelCheckpoint` — saves best `val_accuracy` checkpoint
-- `EarlyStopping` — stops if `val_loss` stagnates (patience=5)
-- `ReduceLROnPlateau` — halves LR on plateau (patience=3, min_lr=1e-7)
+| Callback | Monitor | Config |
+|---|---|---|
+| `ModelCheckpoint` | `val_accuracy` | Saves best checkpoint |
+| `EarlyStopping` | `val_loss` | patience=5, restores best weights |
+| `ReduceLROnPlateau` | `val_loss` | factor=0.5, patience=3, min_lr=1e-7 |
 
 ---
 
 ## DermAI Web Application
 
-A Flask-based web app that lets users upload a skin image and get an **instant AI-powered diagnosis**.
+A Flask-based web app that lets users upload a skin image and get an **instant AI-powered diagnosis** using the Hybrid CNN + ResNet50 model.
 
 ### Features
 
 - 🖼️ **Drag-and-drop / click-to-upload** image interface
-- 🔬 **Real-time prediction** using the Hybrid CNN + ResNet50 model
-- 📊 **Confidence score** with probability breakdown for all 5 classes
-- 💊 **Disease info cards** — description, symptoms, and severity for each condition
+- 🔬 **Real-time prediction** across all 5 disease classes
+- 📊 **Confidence score** with full probability breakdown
+- 💊 **Disease info cards** — description, symptoms, and severity per class
 - ⚕️ **Medical disclaimer** for responsible AI use
 
 ### Supported Conditions
@@ -191,7 +219,7 @@ A Flask-based web app that lets users upload a skin image and get an **instant A
 
 ### Supported Upload Formats
 
-JPG · JPEG · PNG · BMP · WEBP (max 10 MB)
+JPG · JPEG · PNG · BMP · WEBP &nbsp;(max 10 MB)
 
 ---
 
@@ -214,7 +242,7 @@ pip install -r requirements.txt
 
 All commands should be run from the **project root** `SkinDiseaseClassification/`.
 
-### Original CNN Pipeline
+### Pipeline 1 — Custom CNN
 
 **Train:**
 ```bash
@@ -233,7 +261,7 @@ python src/predict.py "C:/path/to/your/image.jpg"
 
 ---
 
-### Hybrid CNN + ResNet50 Pipeline
+### Pipeline 2 — Hybrid CNN + ResNet50
 
 **Train (two-phase):**
 ```bash
@@ -256,7 +284,6 @@ python src/predict_hybrid.py "C:/path/to/your/image.jpg"
 
 ### DermAI Web Application
 
-**Run the app:**
 ```bash
 python app/app.py
 ```
@@ -270,23 +297,23 @@ http://127.0.0.1:5000
 
 ## Outputs
 
-### Original CNN
+### Pipeline 1 — Custom CNN
 
 | File | Description |
 |---|---|
-| `models/best_model.keras` | Best checkpoint (by val_accuracy) |
-| `models/final_model.keras` | Model after last epoch |
+| `models/best_model.keras` | Best checkpoint saved during training |
+| `models/final_model.keras` | Model after the last epoch |
 | `outputs/accuracy.png` | Training vs validation accuracy |
 | `outputs/loss.png` | Training vs validation loss |
-| `outputs/confusion_matrix.png` | Confusion matrix on test set |
+| `outputs/confusion_matrix.png` | 5-class confusion matrix on test set |
 
-### Hybrid Model
+### Pipeline 2 — Hybrid Model
 
 | File | Description |
 |---|---|
 | `models/best_model_hybrid.keras` | Best hybrid checkpoint |
 | `models/final_model_hybrid.keras` | Final hybrid model |
 | `models/history_phase1.json` | Phase 1 training history (for resumable runs) |
-| `outputs/accuracy_hybrid.png` | Phase 1 + Phase 2 accuracy plot |
-| `outputs/loss_hybrid.png` | Phase 1 + Phase 2 loss plot |
-| `outputs/confusion_matrix_hybrid.png` | 5-class confusion matrix |
+| `outputs/accuracy_hybrid.png` | Phase 1 + Phase 2 combined accuracy plot |
+| `outputs/loss_hybrid.png` | Phase 1 + Phase 2 combined loss plot |
+| `outputs/confusion_matrix_hybrid.png` | 5-class confusion matrix on test set |
