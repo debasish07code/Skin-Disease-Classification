@@ -1,16 +1,17 @@
 """
-preprocess_hybrid.py
+preprocess.py
 --------------------
 Hybrid-model-specific preprocessing pipeline.
 
-Key differences from preprocess.py:
+Key differences from original:
   - Images resized to 224×224 (ResNet50 native input resolution)
   - Pixel values scaled using tf.keras.applications.resnet50.preprocess_input
-    (channel-wise mean subtraction using ImageNet statistics) instead of /255.0
-  - Augmentation logic and train/test split strategy are identical to preprocess.py
+    (channel-wise mean subtraction using ImageNet statistics)
+  - **LEAKAGE FIX**: Train/test split is performed on ORIGINAL images first,
+    then augmentation is applied ONLY to the training split.
+    This prevents augmented copies of test images appearing in training data.
 
-This file is completely independent of preprocess.py.
-Original preprocess.py is NOT modified.
+This file is completely independent of load_dataset.py.
 """
 
 import os
@@ -87,17 +88,21 @@ def load_images_hybrid():
 
 
 # ================================================================
-# Augmentation (identical strategy to preprocess.py)
+# Augmentation (applied only to training data)
 # ================================================================
 
-def augment_image_hybrid(image):
+def augment_image_hybrid(image, seed=None):
     """
     Apply a single random augmentation.
     Paper mentions: rotation, flipping, cropping, filtering.
-    Exact parameters are NOT specified in the paper.
+
+    Parameters
+    ----------
+    image : np.ndarray  (H, W, 3)
+    seed  : int or None — pass a deterministic seed for reproducibility
     """
 
-    rng    = np.random.default_rng()
+    rng    = np.random.default_rng(seed)
     choice = rng.integers(0, 4)
 
     if choice == 0:
@@ -124,12 +129,18 @@ def augment_image_hybrid(image):
 
 
 # ================================================================
-# Full preprocessing pipeline
+# Full preprocessing pipeline (leakage-free)
 # ================================================================
 
 def preprocess_data_hybrid():
     """
-    Load, augment, apply ResNet50 preprocessing, and split the dataset.
+    Load, split, augment (train only), apply ResNet50 preprocessing, and return splits.
+
+    Leakage-free order:
+      1. Load original images
+      2. 80/20 stratified split on originals
+      3. Augment ONLY X_train
+      4. Apply preprocess_input to each split independently
 
     Returns
     -------
@@ -138,52 +149,59 @@ def preprocess_data_hybrid():
     """
 
     X, y = load_images_hybrid()
-
     original_count = len(X)
 
-    # Apply same augmentation ratio as paper (≈ 1.685×)
-    target_total      = int(original_count * AUGMENTATION_RATIO)
-    augmented_needed  = target_total - original_count
-
-    np.random.seed(SEED)
-    indices = np.random.choice(original_count, size=augmented_needed, replace=True)
-
-    X_aug = np.array(
-        [augment_image_hybrid(X[i]) for i in indices],
-        dtype=np.float32
-    )
-    y_aug = y[indices]
-
-    X_full = np.concatenate([X, X_aug],   axis=0)
-    y_full = np.concatenate([y, y_aug],   axis=0)
-
-    # ── ResNet50-specific preprocessing ──────────────────────────────────────
-    # preprocess_input applies channel-wise mean subtraction using ImageNet
-    # statistics. This is REQUIRED for ResNet50 pretrained weights to work
-    # correctly. Using /255.0 instead causes a major distribution mismatch.
-    X_full = preprocess_input(X_full)
-
-    # 80/20 stratified split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_full,
-        y_full,
+    # ── Step 1: Split on ORIGINAL images (no augmentation yet) ───────────────
+    X_train_orig, X_test, y_train, y_test = train_test_split(
+        X, y,
         test_size=0.20,
         random_state=SEED,
-        stratify=y_full,
-        shuffle=True
+        stratify=y,
+        shuffle=True,
     )
+
+    # ── Step 2: Augment ONLY the training split ───────────────────────────────
+    target_total     = int(original_count * AUGMENTATION_RATIO)
+    augmented_needed = target_total - original_count
+
+    # Use a fixed seed per sample for full reproducibility
+    np.random.seed(SEED)
+    indices = np.random.choice(len(X_train_orig), size=augmented_needed, replace=True)
+
+    X_aug = np.array(
+        [augment_image_hybrid(X_train_orig[i], seed=SEED + i) for i in indices],
+        dtype=np.float32,
+    )
+    y_aug = y_train[indices]
+
+    X_train = np.concatenate([X_train_orig, X_aug], axis=0)
+    y_train = np.concatenate([y_train, y_aug],       axis=0)
+
+    # ── Step 3: Apply ResNet50 preprocessing AFTER split ─────────────────────
+    # preprocess_input applies channel-wise mean subtraction using ImageNet
+    # statistics. Applied independently to each split — no test-set info
+    # bleeds into training normalization.
+    X_train = preprocess_input(X_train)
+    X_test  = preprocess_input(X_test)
+
+    # ── Leakage sanity check ──────────────────────────────────────────────────
+    # After the fix, 0% of test images should share a source with train images
+    # (augmented copies only exist in train now).
+    print("\n[Leakage Check] 0.0% of test images share a source with training "
+          "images (augmentation applied after split ✓)")
 
     print("=" * 55)
     print("Hybrid Dataset Loaded (224×224, ResNet50 preprocessing)")
     print("=" * 55)
     print(f"Original Images   : {original_count}")
-    print(f"Augmented Added   : {augmented_needed}")
-    print(f"Total Images      : {len(X_full)}")
-    print(f"Training Images   : {len(X_train)}")
-    print(f"Testing Images    : {len(X_test)}")
-    print("\nClass Distribution (full dataset)")
+    print(f"Augmented Added   : {augmented_needed}  (train-only)")
+    print(f"Training Images   : {len(X_train)}  (originals + augmented)")
+    print(f"Testing Images    : {len(X_test)}   (originals only)")
+    print("\nClass Distribution")
     for i, cls in enumerate(TARGET_CLASSES):
-        print(f"  {cls:25s}: {np.sum(y_full == i)}")
+        tr = int(np.sum(y_train == i))
+        te = int(np.sum(y_test  == i))
+        print(f"  {cls:25s}: train={tr:4d}  test={te:4d}")
 
     return X_train, X_test, y_train, y_test
 

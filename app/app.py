@@ -69,6 +69,10 @@ HYBRID_IMAGE_HEIGHT = 224
 HYBRID_IMAGE_WIDTH  = 224
 MAX_FILE_SIZE_MB    = 10
 
+# Minimum softmax confidence to accept a skin disease prediction.
+# Images scoring below this threshold are flagged as out-of-distribution.
+CONFIDENCE_THRESHOLD = 60.0   # percent
+
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE_MB * 1024 * 1024
 
@@ -131,8 +135,23 @@ def predict():
         img_tensor  = preprocess_image(file_bytes)
         predictions = MODEL.predict(img_tensor, verbose=0)[0]
         pred_index  = int(np.argmax(predictions))
-        pred_class  = TARGET_CLASSES[pred_index]
         confidence  = float(predictions[pred_index] * 100)
+
+        # ── Out-of-distribution check ─────────────────────────────────────
+        is_ood = confidence < CONFIDENCE_THRESHOLD
+        if is_ood:
+            pred_class   = "Not a skin disease image"
+            disease_info = {
+                "description": "The uploaded image does not appear to contain a recognisable skin condition. "
+                                "Please upload a clear, close-up photo of the affected skin area.",
+                "symptoms":    [],
+                "icon":        "⚠️",
+                "color":       "#636e72",
+                "severity":    "Unrecognised — Not a skin disease image",
+            }
+        else:
+            pred_class   = TARGET_CLASSES[pred_index]
+            disease_info = DISEASE_INFO.get(pred_class, {})
 
         # Build sorted probability list
         probabilities = [
@@ -151,7 +170,8 @@ def predict():
             "confidence":      round(confidence, 2),
             "probabilities":   probabilities,
             "image_data":      image_to_base64(file_bytes, mime),
-            "disease_info":    DISEASE_INFO.get(pred_class, {}),
+            "disease_info":    disease_info,
+            "is_ood":          is_ood,
         })
 
     except ValueError as e:

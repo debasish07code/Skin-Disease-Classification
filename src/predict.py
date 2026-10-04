@@ -39,6 +39,11 @@ from config import *
 HYBRID_IMAGE_HEIGHT = 224
 HYBRID_IMAGE_WIDTH  = 224
 
+# Minimum confidence required to report a class.
+# If the top class scores below this, the image is flagged as
+# "Not a skin disease image" (out-of-distribution).
+CONFIDENCE_THRESHOLD = 60.0   # percent
+
 
 def predict_image_hybrid(image_path: str):
     """
@@ -89,14 +94,24 @@ def predict_image_hybrid(image_path: str):
 
     # ── Predict ───────────────────────────────────────────────────────────────
     predictions     = model.predict(image, verbose=0)
-    predicted_index = np.argmax(predictions[0])
-    confidence      = predictions[0][predicted_index] * 100
-    predicted_class = TARGET_CLASSES[predicted_index]
+    predicted_index = int(np.argmax(predictions[0]))
+    confidence      = float(predictions[0][predicted_index] * 100)
 
     probabilities = {
         cls: float(predictions[0][i] * 100)
         for i, cls in enumerate(TARGET_CLASSES)
     }
+
+    # ── Out-of-distribution check ─────────────────────────────────────────────
+    # If the model is not confident enough about any class, the image is likely
+    # not a skin disease image (e.g., a random object like a light pole).
+    if confidence < CONFIDENCE_THRESHOLD:
+        predicted_class = "Not a skin disease image"
+        ood_note = (f"  ⚠ Confidence too low ({confidence:.1f}% < {CONFIDENCE_THRESHOLD}%).\n"
+                    f"  This image does not appear to show a recognisable skin condition.")
+    else:
+        predicted_class = TARGET_CLASSES[predicted_index]
+        ood_note = ""
 
     # ── Print results ─────────────────────────────────────────────────────────
     print("=" * 50)
@@ -105,6 +120,8 @@ def predict_image_hybrid(image_path: str):
     print(f"  Image           : {image_path}")
     print(f"  Predicted Class : {predicted_class}")
     print(f"  Confidence      : {confidence:.2f}%")
+    if ood_note:
+        print(ood_note)
     print("-" * 50)
     print("  Class Probabilities:")
     for cls, prob in probabilities.items():
